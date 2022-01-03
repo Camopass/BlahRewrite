@@ -1,0 +1,9 @@
+name = "Player"
+
+[animations]
+run = "src/data/Entities/PlayerAnimations/run.json"
+
+[attributes]
+health = 10
+speed = 5
+weight = 1.5
