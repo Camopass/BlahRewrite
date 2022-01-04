@@ -7,3 +7,4 @@ run = "data/Entities/PlayerAnimations/run.json"
 health = 10
 speed = 5
 weight = 1.5
+bounciness = 0.8

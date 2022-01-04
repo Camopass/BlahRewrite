@@ -12,7 +12,6 @@ import uuid_by_string
 
 from pygame.math import Vector2 as Vec2
 
-
 VecLike = Vec2 | typing.Tuple[int, int]
 
 
@@ -40,10 +39,26 @@ def blit_fit_rect(surface: pygame.Surface, image: pygame.Surface, rect: pygame.R
 
 
 class PhysicsData:
-    def __init__(self, gravity, collision_rects, friction):
+    def __init__(self, gravity: float, collision_rects: typing.List[pygame.Rect], friction: float):
         self.gravity = gravity
-        self.friction = friction
+        self.air_friction = friction
         self.rects = collision_rects
+
+
+class MovementInfo:
+    def __init__(self, up: bool, down: bool, left: bool, right: bool):
+        self.up = up
+        self.down = down
+        self.left = left
+        self.right = right
+        self.n = up
+        self.s = down
+        self.e = right
+        self.w = left
+        self.ne = up and right
+        self.se = down and right
+        self.sw = down and left
+        self.nw = up and left
 
 
 class Window:
@@ -117,6 +132,7 @@ class Animation:
     Create an Animation Class from an Adobe Animate json file.
     I plan on supporting more modes of animations, but for now this is all.
     """
+
     def __init__(self, fp: os.PathLike):
         with open(fp, 'r', encoding='utf-8-sig') as f:
             data = json.loads(f.read())
@@ -151,6 +167,7 @@ class Entity:
         self.is_flipped = False
         self.frame = 0
         self.animations = {name: Animation(anim) for name, anim in animations.items()}
+        self.animation = 'run'
 
         self.vel = Vec2(0, 0)
         self.weight = self.attributes['weight']
@@ -161,7 +178,7 @@ class Entity:
         self.angle = 0
 
     def get_processed_image(self):
-        image: pygame.Surface = self.animations['run'].frames[self.frame]
+        image: pygame.Surface = self.animations[self.animation].frames[self.frame - 1]
         if self.is_flipped:
             image = pygame.transform.flip(image, True, False)
         if self.angle != 0:
@@ -173,7 +190,44 @@ class Entity:
         surface.blit(image, pos)
 
     def update(self, dt, physics_info: PhysicsData):
-        pass
+        # Movement
+        x = self.x + self.vel.x
+        y = self.y + self.vel.y
+
+        self.vel *= physics_info.air_friction
+
+        movement = MovementInfo(self.vel.y > 0, self.vel.y < 0, self.vel.x < 0, self.vel.x > 0)
+
+        for rect in physics_info.rects:
+            if rect.colliderect(self.rect):
+                if movement.s:
+                    self.y = rect.top
+                    if 'bounciness' in self.attributes.keys():
+                        self.vel.y *= -self.attributes['bounciness']
+                    else:
+                        self.vel.y = 0
+                if movement.n:
+                    self.y = rect.bottom
+                    if 'bounciness' in self.attributes.keys():
+                        self.vel.y *= -self.attributes['bounciness']
+                    else:
+                        self.vel.y = 0
+                if movement.e:
+                    self.x = rect.left
+                    if 'bounciness' in self.attributes.keys():
+                        self.vel.x *= -self.attributes['bounciness']
+                    else:
+                        self.vel.x = 0
+                if movement.w:
+                    self.x = rect.right
+                    if 'bounciness' in self.attributes.keys():
+                        self.vel.x *= -self.attributes['bounciness']
+                    else:
+                        self.vel.x = 0
+
+        self.frame += 1
+        if self.frame > len(self.animations[self.animation].frames):
+            self.frame = 0
 
     @property
     def x(self):
@@ -210,11 +264,18 @@ class Level:
         self.images = images
         self.tile_size = tile_size
 
+        self.rects = []
+
+        for y, row in enumerate(self.tiles):
+            for x, tile in enumerate(row):
+                if tile != 0:
+                    self.rects.append(pygame.Rect(x * self.tile_size, y * self.tile_size, self.tile_size, self.tile_size))
+
     def render(self, screen, pos: VecLike):
         for y, row in enumerate(self.tiles):
             for x, tile in enumerate(row):
-                if tile is not None:
-                    screen.blit(self.images[tile], (Vec2(x, y) * self.tile_size) + pos)
+                if tile != 0:
+                    screen.blit(self.images[tile - 1], (Vec2(x, y) * self.tile_size) + pos)
 
 
 if __name__ == '__main__':
