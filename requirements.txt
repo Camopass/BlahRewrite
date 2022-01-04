@@ -1,3 +1,4 @@
 pygame~=2.1.2
-Pillow~=8.4.0
+Pillow==9.0.0
 toml~=0.10.2
+uuid_by_string~=0.1.0

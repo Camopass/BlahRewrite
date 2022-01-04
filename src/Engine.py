@@ -1,7 +1,9 @@
 """
 Compass Engine v 2.0.0
 """
-
+import json
+import os
+import random
 import typing
 
 import pygame
@@ -37,6 +39,13 @@ def blit_fit_rect(surface: pygame.Surface, image: pygame.Surface, rect: pygame.R
     surface.blit(blit_im, (rect.x, rect.y), area=rect)
 
 
+class PhysicsData:
+    def __init__(self, gravity, collision_rects, friction):
+        self.gravity = gravity
+        self.friction = friction
+        self.rects = collision_rects
+
+
 class Window:
     def __init__(self, title: str, res: typing.Tuple[int, int] | Vec2):
         self._title = title
@@ -45,6 +54,7 @@ class Window:
         pygame.display.set_caption(title)
         self.fullscreen = False
         self.mouse_state = {'left': 0, 'middle': 0, 'right': 0}
+        self.entities = []
 
     def handle_compass_events(self, event):
         if event.type == pygame.VIDEORESIZE:
@@ -57,6 +67,32 @@ class Window:
             elif event.button == pygame.BUTTON_RIGHT:
                 self.mouse_state['right'] = 1
 
+    def get_entity_by_name(self, name: str):
+        s = self.entities
+        for entity in s:
+            if entity.name == name:
+                return entity
+
+    def get_entities_by_name(self, name: str):
+        entities = []
+        for entity in self.entities:
+            if entity.name == name:
+                entities.append(entity)
+        return entities
+
+    def get_entity_by_type_id(self, uuid: str):
+        for entity in self.entities:
+            if entity.type_uuid == uuid:
+                return entity
+
+    def get_entity_by_uuid(self, uuid: str):
+        for entity in self.entities:
+            if entity.random_uuid == uuid:
+                return entity
+
+    def add_entity(self, entity):
+        self.entities.append(entity)
+
     @property
     def res(self):
         return self._res
@@ -64,7 +100,7 @@ class Window:
     @res.setter
     def res(self, value: typing.Tuple[int, int] | Vec2):
         self._res = value
-        self.display = pygame.display.set_mode(value, pygame.RESIZABLE)
+        self.screen = pygame.display.set_mode(value, pygame.RESIZABLE)
 
     @property
     def title(self):
@@ -77,23 +113,44 @@ class Window:
 
 
 class Animation:
-    def __init__(self, data):
-
+    """
+    Create an Animation Class from an Adobe Animate json file.
+    I plan on supporting more modes of animations, but for now this is all.
+    """
+    def __init__(self, fp: os.PathLike):
+        with open(fp, 'r', encoding='utf-8-sig') as f:
+            data = json.loads(f.read())
+        self.meta = data['meta']
+        self.image = self.meta['image']
+        path = os.path.dirname(fp)
+        image_path = os.path.join(path, self.image)
+        self.image = pygame.image.load(image_path).convert_alpha()
+        frames = data['frames']
+        self.frames = []
+        for _, frame in frames.items():
+            f = frame['frame']
+            f_im = self.image.subsurface((f['x'], f['y'], f['w'], f['h']))
+            if frame['rotated']:
+                raise ValueError('If this is me, implement this, moron. If this is not me, please DM me the data so I '
+                                 'can implement this. The Stinky Cheese Man#1768')
+            self.frames.append(f_im)
 
 
 class Entity:
     def __init__(self, data: str):
+        super().__init__()
         self.data_folder = data
         self.data = toml.load(data)
         self.name = self.data['name']
         animations = self.data['animations']
         self.attributes = self.data['attributes']
 
-        self.uuid = uuid_by_string.generate_uuid(data)
+        self.type_uuid = uuid_by_string.generate_uuid(data)  # Determined based on the file path
+        self.random_uuid = uuid_by_string.generate_uuid(data + str(random.random()))  # completely random at runtime
 
         self.is_flipped = False
         self.frame = 0
-        self.animations = animations
+        self.animations = {name: Animation(anim) for name, anim in animations.items()}
 
         self.vel = Vec2(0, 0)
         self.weight = self.attributes['weight']
@@ -104,7 +161,7 @@ class Entity:
         self.angle = 0
 
     def get_processed_image(self):
-        image: pygame.Surface = self.animations[self.frame]
+        image: pygame.Surface = self.animations['run'].frames[self.frame]
         if self.is_flipped:
             image = pygame.transform.flip(image, True, False)
         if self.angle != 0:
@@ -114,6 +171,9 @@ class Entity:
     def draw(self, surface: pygame.Surface, pos: VecLike):
         image = self.get_processed_image()
         surface.blit(image, pos)
+
+    def update(self, dt, physics_info: PhysicsData):
+        pass
 
     @property
     def x(self):
