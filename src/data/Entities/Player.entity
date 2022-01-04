@@ -1,7 +1,7 @@
 name = "Player"
 
 [animations]
-run = "src/data/Entities/PlayerAnimations/run.json"
+run = "data/Entities/PlayerAnimations/run.json"
 
 [attributes]
 health = 10
