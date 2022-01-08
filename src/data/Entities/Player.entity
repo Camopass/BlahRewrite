@@ -1,4 +1,5 @@
 name = "Player"
+scale = 2
 
 [animations]
 run = "data/Entities/PlayerAnimations/run.json"
