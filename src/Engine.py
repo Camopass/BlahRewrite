@@ -4,6 +4,7 @@ Compass Engine v 2.0.0
 import json
 import os
 import random
+import traceback
 import typing
 
 import pygame
@@ -60,11 +61,14 @@ class MovementInfo:
         self.sw = down and left
         self.nw = up and left
 
+    def __repr__(self):
+        return f'MI({self.n}, {self.e}, {self.s}, {self.w})'
+
 
 class Window:
-    def __init__(self, title: str, res: typing.Tuple[int, int] | Vec2):
+    def __init__(self, title: str, res: VecLike):
         self._title = title
-        self._res = res
+        self._res = Vec2(res)
         self.screen = pygame.display.set_mode(res, pygame.RESIZABLE)
         pygame.display.set_caption(title)
         self.fullscreen = False
@@ -113,8 +117,8 @@ class Window:
         return self._res
 
     @res.setter
-    def res(self, value: typing.Tuple[int, int] | Vec2):
-        self._res = value
+    def res(self, value: VecLike):
+        self._res = Vec2(value)
         self.screen = pygame.display.set_mode(value, pygame.RESIZABLE)
 
     @property
@@ -133,9 +137,9 @@ class Animation:
     I plan on supporting more modes of animations, but for now this is all.
     """
 
-    def __init__(self, fp: os.PathLike):
-        with open(fp, 'r', encoding='utf-8-sig') as f:
-            data = json.loads(f.read())
+    def __init__(self, fp: os.PathLike, scaling: int = None):
+        with open(fp, 'r') as file:
+            data = json.load(file)
         self.meta = data['meta']
         self.image = self.meta['image']
         path = os.path.dirname(fp)
@@ -149,12 +153,18 @@ class Animation:
             if frame['rotated']:
                 raise ValueError('If this is me, implement this, moron. If this is not me, please DM me the data so I '
                                  'can implement this. The Stinky Cheese Man#1768')
+            if scaling is not None:
+                if scaling == 2:
+                    f_im = pygame.transform.scale2x(f_im)
+                else:
+                    f_im = pygame.transform.scale(f_im, (f_im.get_width() * scaling, f_im.get_height() * scaling))
             self.frames.append(f_im)
 
 
 class Entity:
     def __init__(self, data: str):
         super().__init__()
+        self.terminal_velocity = 35
         self.data_folder = data
         self.data = toml.load(data)
         self.name = self.data['name']
@@ -166,7 +176,12 @@ class Entity:
 
         self.is_flipped = False
         self.frame = 0
-        self.animations = {name: Animation(anim) for name, anim in animations.items()}
+
+        scaling = None
+        if 'scale' in self.data.keys():
+            scaling = self.data['scale']
+
+        self.animations = {name: Animation(anim, scaling) for name, anim in animations.items()}
         self.animation = 'run'
 
         self.vel = Vec2(0, 0)
@@ -174,8 +189,11 @@ class Entity:
 
         self._x = 0
         self._y = 0
-        self._rect = pygame.Rect(0, 0, 10, 10)  # (self.animations[0].get_width(), self.animations[0].get_height()))
+        im = self.animations[self.animation].frames[0]
+        width, height = im.get_width(), im.get_height()
+        self._rect = pygame.Rect(0, 0, width, height)  # (self.animations[0].get_width(), self.animations[0].get_height()))
         self.angle = 0
+        self.collisions = {'up': False, 'down': False, 'left': False, 'right': False}
 
     def get_processed_image(self):
         image: pygame.Surface = self.animations[self.animation].frames[self.frame - 1]
@@ -191,43 +209,65 @@ class Entity:
 
     def update(self, dt, physics_info: PhysicsData):
         # Movement
-        x = self.x + self.vel.x
-        y = self.y + self.vel.y
+        collisions = {'up': False, 'down': False, 'left': False, 'right': False}
 
-        self.vel *= physics_info.air_friction
+        x = self.x + self.vel.x * dt
+        self.x = x
 
-        movement = MovementInfo(self.vel.y > 0, self.vel.y < 0, self.vel.x < 0, self.vel.x > 0)
+        movement = MovementInfo(self.vel.y < 0, self.vel.y > 0, self.vel.x < 0, self.vel.x > 0)
 
         for rect in physics_info.rects:
             if rect.colliderect(self.rect):
-                if movement.s:
-                    self.y = rect.top
-                    if 'bounciness' in self.attributes.keys():
-                        self.vel.y *= -self.attributes['bounciness']
-                    else:
-                        self.vel.y = 0
-                if movement.n:
-                    self.y = rect.bottom
-                    if 'bounciness' in self.attributes.keys():
-                        self.vel.y *= -self.attributes['bounciness']
-                    else:
-                        self.vel.y = 0
                 if movement.e:
-                    self.x = rect.left
+                    self.x = rect.left - self.rect.w
+                    collisions['right'] = True
                     if 'bounciness' in self.attributes.keys():
                         self.vel.x *= -self.attributes['bounciness']
                     else:
                         self.vel.x = 0
                 if movement.w:
                     self.x = rect.right
+                    collisions['left'] = True
                     if 'bounciness' in self.attributes.keys():
                         self.vel.x *= -self.attributes['bounciness']
                     else:
                         self.vel.x = 0
 
+        self.y = self.y + self.vel.y * dt
+
+        self.vel *= physics_info.air_friction
+
+        movement = MovementInfo(self.vel.y < 0, self.vel.y > 0, self.vel.x < 0, self.vel.x > 0)
+
+        for rect in physics_info.rects:
+            if rect.colliderect(self.rect):
+                if movement.s:
+                    self.y = rect.top - self.rect.h
+                    collisions['down'] = True
+                    if 'bounciness' in self.attributes.keys():
+                        self.vel.y *= -self.attributes['bounciness']
+                    else:
+                        self.vel.y = 0
+                if movement.n:
+                    self.y = rect.bottom
+                    collisions['up'] = True
+                    if 'bounciness' in self.attributes.keys():
+                        self.vel.y *= -self.attributes['bounciness']
+                    else:
+                        self.vel.y = 0
+
+        if not collisions['down']:
+            self.vel.y = min(self.vel.y + physics_info.gravity, self.terminal_velocity)
+
+        self.collisions = collisions
+
+        # Animations
+
         self.frame += 1
         if self.frame > len(self.animations[self.animation].frames):
             self.frame = 0
+
+        self.is_flipped = self.vel.x < 0
 
     @property
     def x(self):
