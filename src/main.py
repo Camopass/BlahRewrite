@@ -1,4 +1,6 @@
+import decimal
 import sys
+import time
 import typing
 import random
 from time import perf_counter
@@ -6,8 +8,10 @@ from time import perf_counter
 import pygame
 import Engine
 
-from pygame.math import Vector2 as Vec2
+import pygame.gfxdraw
 
+from perlin_noise import PerlinNoise
+from pygame.math import Vector2 as Vec2
 
 pygame.init()
 
@@ -24,6 +28,12 @@ def load_image(image, no_alpha=False):
     else:
         im = im.convert_alpha()
     return pygame.transform.scale2x(im)
+
+
+def better_range(start, stop, step):
+  while start < stop:
+    yield float(start)
+    start += decimal.Decimal(step)
 
 
 if __name__ == '__main__':
@@ -59,17 +69,23 @@ if __name__ == '__main__':
 
     physics_data = Engine.PhysicsData(1.8, level.rects, 0.9)
 
-    def get_render_pos(pos: Vec2 | typing.Tuple[int, int]):
+    font = pygame.font.SysFont('Comic Sans MS', 15)
+
+    sky = load_image('data/Backgrounds/Sky.png', True)
+
+
+    def get_render_pos(pos: Vec2 | typing.Tuple[int, int] | typing.Tuple[float, float]):
         pos = Vec2(pos) - camera + window.res / 2
-        return Vec2(pos.x - player.rect.w / 2, pos.y + window.res.y / 15)
+        return Vec2(pos.x - player.rect.w / 2, pos.y + window.res.y / 20)
+
 
     while True:
-        start_time = perf_counter()
+        start_time = time.time()
         player.update(dt, physics_data)
 
-        camera += (Vec2(player.x, player.y) - camera) / 16
+        camera += ((Vec2(player.x, player.y) - camera) / 16)
 
-        window.screen.fill((10, 10, 10))
+        window.screen.blit(sky, (0, 0))
 
         if debug_options.draw_hitboxes:
             for r in physics_data.rects:
@@ -88,6 +104,8 @@ if __name__ == '__main__':
 
         player.draw(window.screen, get_render_pos(player.rect.topleft))
 
+        window.screen.blit(font.render(f'FPS: {int(clock.get_fps())}', False, (255, 255, 255)), (5, 5))
+
         pygame.display.update()
 
         for event in pygame.event.get():
@@ -103,11 +121,10 @@ if __name__ == '__main__':
         if keys[pygame.K_d]:
             player.vel.x += player.attributes['speed'] * dt
         if keys[pygame.K_w] and player.collisions['down']:
-            player.vel.y = -70
+            player.vel.y = -30 * (1 / dt)
 
         if keys[pygame.K_b]:
             debug_options.draw_hitboxes = not debug_options.draw_hitboxes
 
-        end_time = perf_counter()
         # print(end_time - start_time)
         dt = clock.tick(60) / 60
